@@ -21,3 +21,4 @@ traceability_matrix_*.csv
 # OS
 .DS_Store
 Thumbs.db
+.venv/
