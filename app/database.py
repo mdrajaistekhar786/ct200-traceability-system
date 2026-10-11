@@ -1,29 +1,85 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+"""
+MongoDB database configuration.
 
-from  app.models import Base
+Provides:
+- MongoDB client
+- Database instance
+- Collection access
+- FastAPI database dependency
+"""
 
-DATABASE_URL = "sqlite:///./ct200.db"
+import os
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False}
+from dotenv import load_dotenv
+from pymongo import MongoClient
+
+load_dotenv()
+
+
+# ===========================================================================
+# MongoDB Configuration
+# ===========================================================================
+
+MONGODB_URL = os.getenv(
+    "MONGODB_URL",
+    "mongodb://localhost:27017",
 )
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
+MONGODB_DATABASE = os.getenv(
+    "MONGODB_DATABASE",
+    "ct200",
 )
 
+
+# ===========================================================================
+# MongoDB Client
+# ===========================================================================
+
+client = MongoClient(
+    MONGODB_URL
+)
+
+db = client[
+    MONGODB_DATABASE
+]
+
+
+# ===========================================================================
+# Collections
+# ===========================================================================
+
+documents_collection = db["documents"]
+
+requirements_collection = db["requirements"]
+
+test_cases_collection = db["test_cases"]
+
+validation_results_collection = db["validation_results"]
+
+traceability_collection = db["traceability"]
+
+
+# ===========================================================================
+# Connection
+# ===========================================================================
 
 def create_tables():
-    Base.metadata.create_all(bind=engine)
+    """
+    MongoDB does not require table creation.
+
+    Collections are created automatically when documents
+    are inserted.
+    """
+    return db
 
 
 def get_db():
-    db = SessionLocal()
+    """
+    FastAPI dependency.
+
+    Returns the MongoDB database instance.
+    """
     try:
         yield db
     finally:
-        db.close()
+        pass

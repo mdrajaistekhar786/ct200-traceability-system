@@ -1,140 +1,189 @@
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    Text,
-    Boolean,
-    ForeignKey,
-    DateTime
-)
-from sqlalchemy.orm import relationship, declarative_base
+"""
+MongoDB data models for the CT-200 Traceability System.
+
+These Pydantic models define the structure of documents stored
+in MongoDB collections.
+"""
+
 from datetime import datetime
+from typing import Optional, List, Any
 
-Base = declarative_base()
+from pydantic import BaseModel, Field
 
 
-# ==========================
-# Document Table
-# ==========================
-class Document(Base):
-    __tablename__ = "documents"
+# ===========================================================================
+# Document
+# ===========================================================================
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    version = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+class Document(BaseModel):
+    """
+    Represents an uploaded CT-200 document/version.
+
+    Document identity is based on the SHA-256 hash of the actual
+    PDF content, not on the filename.
+
+    This allows the system to:
+        - detect exact duplicate uploads
+        - reuse the existing document_id
+        - prevent duplicate processing
+        - maintain stable version history
+    """
+
+    # MongoDB document ID
+    id: Optional[str] = None
+
+    # Original uploaded filename
+    name: str
+
+    # Logical document version
+    # Example: v1, v2
+    version: str
+
+    # SHA-256 hash of the actual PDF bytes
+    content_hash: str
+
+    # ID of the immediately previous actual document version
+    previous_document_id: Optional[str] = None
+
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow
+    )
 
     # Set by the Document Gate (CRAG) node
-    is_relevant = Column(Boolean, default=True)
-    relevance_reason = Column(Text, nullable=True)
+    is_relevant: bool = True
+    relevance_reason: Optional[str] = None
 
-    # "first" | "unchanged" | "changed" -- set by Version Detection
-    version_status = Column(String, nullable=True)
-
-    # Relationships
-    nodes = relationship(
-        "RequirementNode",
-        back_populates="document",
-        cascade="all, delete-orphan"
-    )
+    # "first" | "unchanged" | "changed" | "duplicate"
+    version_status: Optional[str] = None
 
 
-# ==========================
-# Requirement Nodes
-# ==========================
-class RequirementNode(Base):
-    __tablename__ = "requirement_nodes"
+# ===========================================================================
+# Requirement Node
+# ===========================================================================
 
-    id = Column(Integer, primary_key=True, index=True)
+class RequirementNode(BaseModel):
+    """
+    Represents a requirement node belonging to a document version.
+
+    Stores the structured information extracted by the PDF parser,
+    including requirement text, tables, and source location.
+    """
+
+    id: Optional[str] = None
 
     # Example: REQ-2.1.3
-    node_id = Column(String, nullable=False, index=True)
+    node_id: str
 
-    document_id = Column(
-        Integer,
-        ForeignKey("documents.id"),
-        nullable=False
+    # MongoDB document ID
+    document_id: str
+
+    # Parent requirement in the hierarchy
+    parent_node_id: Optional[str] = None
+
+    number: Optional[str] = None
+    title: Optional[str] = None
+    level: Optional[int] = None
+
+    # Extracted requirement text
+    text: Optional[str] = None
+
+    # Structured tables extracted from the PDF
+    tables: Optional[List[Any]] = None
+
+    # Original PDF source location
+    page: Optional[int] = None
+    source_y: Optional[float] = None
+
+    # Used for version comparison
+    content_hash: Optional[str] = None
+
+    # Set when compared against the previous document version
+    is_stale: bool = False
+
+
+# ===========================================================================
+# Test Case
+# ===========================================================================
+
+class TestCase(BaseModel):
+    """
+    Represents a generated test case.
+
+    Version-aware fields ensure that each test case can be traced
+    back to the exact document version and requirement content
+    used during generation.
+    """
+
+    id: Optional[str] = None
+
+    requirement_node_id: str
+    document_id: str
+
+    source_version: str
+    source_content_hash: str
+
+    test_case_id: Optional[str] = None
+    title: Optional[str] = None
+    preconditions: Optional[str] = None
+    steps: Optional[str] = None
+    expected_result: Optional[str] = None
+    priority: Optional[str] = None
+
+    # HITL + validation status
+    validation_status: str = "PENDING"
+    human_approval: str = "PENDING"
+
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow
     )
 
-    # Example: REQ-2
-    parent_node_id = Column(String, nullable=True)
 
-    number = Column(String)
-    title = Column(String)
+# ===========================================================================
+# Validation Result
+# ===========================================================================
 
-    level = Column(Integer)
+class ValidationResult(BaseModel):
+    """
+    Stores Self-RAG validation results for generated test cases.
+    """
 
-    text = Column(Text)
+    id: Optional[str] = None
 
-    content_hash = Column(String)
+    requirement_node_id: str
 
-    page = Column(Integer, nullable=True)
+    verdict: str
+    feedback: Optional[str] = None
+    evidence_detail: Optional[str] = None
 
-    # Set by Version Detection / Requirement Agent when compared to the
-    # previous version of the same document
-    is_stale = Column(Boolean, default=False)
+    # Cross-requirement evidence
+    related_requirement_ids: Optional[List[str]] = None
 
-    # Relationship
-    document = relationship("Document", back_populates="nodes")
+    attempt: int = 1
 
-
-class TestCase(Base):
-    __tablename__ = "test_cases"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    requirement_node_id = Column(
-        String,
-        ForeignKey("requirement_nodes.node_id"),
-        nullable=False
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow
     )
 
-    test_case_id = Column(String)
-    title = Column(String)
-    preconditions = Column(Text)
-    steps = Column(Text)
-    expected_result = Column(Text)
-    priority = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
 
+# ===========================================================================
+# Traceability
+# ===========================================================================
 
-# ==========================
-# Validation Results (Self-RAG)
-# ==========================
-class ValidationResult(Base):
-    __tablename__ = "validation_results"
+class Traceability(BaseModel):
+    """
+    Maps a requirement to its generated test case.
+    """
 
-    id = Column(Integer, primary_key=True, index=True)
+    id: Optional[str] = None
 
-    requirement_node_id = Column(
-        String,
-        ForeignKey("requirement_nodes.node_id"),
-        nullable=False
+    document_id: str
+
+    requirement_node_id: str
+
+    test_case_id: str
+
+    status: str = "active"
+
+    updated_at: datetime = Field(
+        default_factory=datetime.utcnow
     )
-
-    verdict = Column(String, nullable=False)  # "pass" | "fail"
-    feedback = Column(Text, nullable=True)
-    evidence_detail = Column(Text, nullable=True)
-
-    # Comma-separated node_ids of other requirements retrieved as
-    # cross-requirement evidence for this validation attempt.
-    related_requirement_ids = Column(Text, nullable=True)
-
-    attempt = Column(Integer, default=1)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-
-# ==========================
-# Traceability (Requirement <-> Test Case)
-# ==========================
-class Traceability(Base):
-    __tablename__ = "traceability"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
-    requirement_node_id = Column(String, nullable=False, index=True)
-    test_case_id = Column(String, nullable=False, index=True)
-
-    status = Column(String, default="active")  # "active" | "stale"
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

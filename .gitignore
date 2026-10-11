@@ -22,3 +22,32 @@ traceability_matrix_*.csv
 .DS_Store
 Thumbs.db
 .venv/
+
+# Test and generated files
+.pytest_cache/
+ct200_test.db
+qdrant_data/
+output/
+lib/
+
+# Evaluation outputs
+evaluation_output.txt
+retrieval_results.txt
+final_evaluation_results.json
+
+# Generated analysis files
+*.csv
+*.png
+*.graphml
+
+# Local/test documents
+data/test_copy.pdf
+data/ct200_manual_v3.pdf
+data/ct200_manual_v4.pdf
+data/ct200_user_manual_version3.pdf
+
+# Local test configuration
+nvidia_test.json
+
+crossencoder_calibration_model.json
+crossencoder_cost_sensitive_model.json
